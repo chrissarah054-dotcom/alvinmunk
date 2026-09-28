@@ -53,24 +53,62 @@ stellar keys generate attester --network mainnet   # fund minimally
 
 **USDC on mainnet:** do NOT issue your own. Use Circle's canonical mainnet USDC and its SAC address as `NEXT_PUBLIC_USDC_SAC_ID`. Verify the issuer `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` on stellar.expert before wiring it.
 
-**Deploy the five contracts.** The testnet script (`scripts/deploy-testnet.sh`) already builds, deploys, initializes, and cross-wires all five (reputation → quest_registry → rewards → registry → gate, plus `add_attester` and reward-table seeding). Make a `scripts/deploy-mainnet.sh` copy of it that:
-1. Uses `--network mainnet`.
-2. Uses the mainnet USDC SAC id (Circle), not a self-issued asset.
-3. Turns `rewards.set_require_funding(true)` ON (proof-of-funding gate for real money).
-4. Sets a conservative `rewards.set_daily_cap` (treasury circuit breaker).
+**Deploy the five contracts** via `scripts/deploy-mainnet.sh`. This script enforces three critical gates:
+
+1. **Passphrase gate:** aborts if the network passphrase is NOT `Public Global Stellar Network ; September 2015` (testnet detection).
+2. **USDC gate:** derives the canonical Circle mainnet USDC SAC and rejects any other SAC address.
+3. **Operator confirmation gate:** requires typing `mainnet` at a prompt before any network writes.
+
+The script also:
+- Builds, deploys, initializes, and cross-wires all five contracts
+- Turns `rewards.set_require_funding(true)` ON (proof-of-funding gate for real money)
+- Sets a conservative `rewards.set_daily_cap` (treasury circuit breaker)
+- Logs contract IDs, WASM hashes, deployer fingerprint, and git commit SHA to `deployment-log.md`
+- Supports `DRY_RUN=1` to print the full plan without network writes
+
+### Usage
+
+**Dry-run first** (strongly recommended — prints the plan, makes no network changes):
 
 ```bash
-stellar contract build   # wasm32v1-none, optimized
-
-USDC_SAC=<circle_mainnet_usdc_sac> ADMIN=admin ATTESTER=attester \
+DRY_RUN=1 ADMIN=admin ATTESTER=attester \
+  USDC_SAC=CAKSAOXC5CZ4HWL7G7F6BBXW7Z54A6Z4UFHFVOWMPCBAGBNNJF7NKH42 \
+  DAILY_CAP=500000000 \
   ./scripts/deploy-mainnet.sh
 ```
 
-After deploy:
+**Real deployment** (after verifying the dry-run output):
+
+```bash
+ADMIN=admin ATTESTER=attester \
+  USDC_SAC=CAKSAOXC5CZ4HWL7G7F6BBXW7Z54A6Z4UFHFVOWMPCBAGBNNJF7NKH42 \
+  DAILY_CAP=500000000 \
+  ./scripts/deploy-mainnet.sh
+```
+
+**Arguments:**
+
+| Arg | Required | Notes |
+| --- | --- | --- |
+| `ADMIN` | ✅ | Stellar key name for the deployer (must be funded on mainnet) |
+| `ATTESTER` | ✅ | Stellar key name for the off-chain attester (minimal XLM) |
+| `USDC_SAC` | ✅ | Circle's canonical mainnet USDC SAC (derived from issuer `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN`) — the script will verify it matches |
+| `DAILY_CAP` | ✅ | Treasury circuit breaker cap in stroops (e.g., `500000000` = 50 USDC); set based on mainnet TVL budget |
+| `DRY_RUN` | ⚠️ optional | Set to `1` to print all commands without submitting to the network |
+
+### Example: Testnet Protective Gates
+
+The script refuses deployment if:
+- Network passphrase is testnet (`Test SDF Network ; September 2015`) → **ERROR: TESTNET DETECTED**
+- USDC_SAC doesn't match the Circle canonical address → **ERROR: USDC SAC mismatch!**
+- Operator doesn't type `mainnet` at the confirmation prompt → **ERROR: Deployment aborted**
+
+### After Deploy
+
 - [ ] Read a view method from each contract on mainnet RPC to confirm it responds.
 - [ ] Run the e2e smoke (a single vouch + claim) against the mainnet ids with a throwaway funded account.
-- [ ] Record each contract id + WASM hash + deployer fingerprint + commit SHA in `deployment-log.md` and the README.
-- [ ] Open each on `stellar.expert/explorer/public/contract/<ID>` and confirm.
+- [ ] Verify `deployment-log.md` contains the contract IDs, WASM hashes, deployer fingerprint, and git SHA.
+- [ ] Open each contract on `stellar.expert/explorer/public/contract/<ID>` and confirm.
 
 ---
 
